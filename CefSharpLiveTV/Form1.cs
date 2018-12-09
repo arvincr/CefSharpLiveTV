@@ -168,11 +168,6 @@ namespace CefSharpLiveTV
                 this.Close();
                 return;
             }
-            else if(liveTVChannel.size == 0)
-            {
-                this.Close();
-                return;
-            }
             label1.Text = "频道信息加载完成";
             chromeBrowser.Load(liveTVChannel.url[liveTVChannel.now]);
             this.Text = (liveTVChannel.now + 1).ToString() + liveTVChannel.name[liveTVChannel.now] + liveTVChannel.url[liveTVChannel.now];

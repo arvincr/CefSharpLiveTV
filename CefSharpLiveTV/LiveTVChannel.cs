@@ -51,7 +51,14 @@ namespace CefSharpLiveTV
                     }
                     chs = chs.NextMatch();
                 }
-                return true;
+                if (size == 0)
+                {
+                    return false;
+                }
+                else
+                {
+                    return true;
+                }
             }
             else
             {
