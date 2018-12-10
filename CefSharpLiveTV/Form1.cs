@@ -378,10 +378,5 @@ namespace CefSharpLiveTV
                 SendKeys.Send("{ESC}");
             }
         }
-
-        private void Form1_MouseMove(object sender, MouseEventArgs e)
-        {
-
-        }
     }
 }
