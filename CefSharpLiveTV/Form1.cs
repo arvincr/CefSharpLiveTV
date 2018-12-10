@@ -31,6 +31,7 @@ namespace CefSharpLiveTV
 
         private readonly IKeyboardInterceptor _interceptor;
         private bool isCaptureScreen = false;
+        
         public Form1()
         {
             var settings = new CefSettings
@@ -277,7 +278,8 @@ namespace CefSharpLiveTV
 
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         public static extern bool GetCursorPos(out POINT pt);
-
+        [DllImport("user32.dll", SetLastError = true)]
+        static extern bool BlockInput(bool fBlockIt);//必须以管理员权限运行才有效
         private void Form1_SizeChanged(object sender, EventArgs e)
         {
             if (chromeBrowser.Created)
@@ -299,14 +301,16 @@ namespace CefSharpLiveTV
             label2.Top = this.ClientSize.Height / 2 - 120;
             label2.Visible = false;
         }
-
         private void timer1_Tick(object sender, EventArgs e)
         {
             timer1.Stop();
             label1.Visible = false;
             if (this.FormBorderStyle == FormBorderStyle.None)
             {
+                //必须以管理员权限运行才有效
+                BlockInput(true);
                 POINT pt = new POINT();
+                //记录鼠标位置
                 GetCursorPos(out pt);
                 Point ps = new Point();
                 Point pc = new Point();
@@ -334,7 +338,9 @@ namespace CefSharpLiveTV
                 ps = this.PointToScreen(pc);
                 SetCursorPos(ps.X, ps.Y);
                 mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+                //恢复鼠标位置
                 SetCursorPos(pt.X, pt.Y);
+                BlockInput(false);
             }
         }
 
@@ -371,6 +377,11 @@ namespace CefSharpLiveTV
                 //退出flash全屏
                 SendKeys.Send("{ESC}");
             }
+        }
+
+        private void Form1_MouseMove(object sender, MouseEventArgs e)
+        {
+
         }
     }
 }
