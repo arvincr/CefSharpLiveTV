@@ -30,7 +30,7 @@ namespace CefSharpLiveTV
         LiveTVChannel liveTVChannel;
 
         private readonly IKeyboardInterceptor _interceptor;
-
+        private bool isCaptureScreen = false;
         public Form1()
         {
             var settings = new CefSettings
@@ -80,7 +80,9 @@ namespace CefSharpLiveTV
                 switch (e.KeyCode)
                 {
                     case Keys.Back:
-                        CaptureScreen(0, 0, this.Width, this.Height);
+                        isCaptureScreen = true;
+                        CaptureScreen(this.Left, this.Top, this.Width, this.Height);
+                        isCaptureScreen = false;
                         break;
                     case Keys.Left://chs--
                         if (backgroundWorker1.IsBusy)
@@ -364,8 +366,11 @@ namespace CefSharpLiveTV
 
         private void timer2_Tick(object sender, EventArgs e)
         {
-            //退出flash全屏
-            SendKeys.Send("{ESC}");
+            if ((this.FormBorderStyle == FormBorderStyle.None) && (!isCaptureScreen))
+            {
+                //退出flash全屏
+                SendKeys.Send("{ESC}");
+            }
         }
     }
 }
