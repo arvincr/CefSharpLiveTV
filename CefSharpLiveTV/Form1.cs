@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Linq;
 using System.Net;
 using System.Runtime.InteropServices;
@@ -26,9 +27,10 @@ namespace CefSharpLiveTV
         public static extern int FindWindow(string lpClassName, string lpWindowName);
 
         ChromiumWebBrowser chromeBrowser;
-        MyRequestHandler myRequestHandler;
         LiveTVChannel liveTVChannel;
+
         private readonly IKeyboardInterceptor _interceptor;
+
         public Form1()
         {
             var settings = new CefSettings
@@ -45,15 +47,31 @@ namespace CefSharpLiveTV
             Cef.Initialize(settings);
             chromeBrowser = new ChromiumWebBrowser("about:blank");
             chromeBrowser.FrameLoadEnd += ChromeBrowser_FrameLoadEnd;
-            myRequestHandler = new MyRequestHandler();
-            chromeBrowser.RequestHandler = myRequestHandler;
+            chromeBrowser.MenuHandler = new MyMenuHandler();
+            chromeBrowser.RequestHandler = new MyRequestHandler();
             chromeBrowser.Dock = DockStyle.Fill;
             chromeBrowser.Visible = true;
             this.Controls.Add(chromeBrowser);
             InitializeComponent();
             label1.BringToFront();
+            label2.BringToFront();
             _interceptor = new KeyboardInterceptor();
             _interceptor.KeyDown += (sender, args) => Hook_KeyDown(sender, args);
+        }
+        private void CaptureScreen(int x, int y, int width, int height)
+        {
+            System.Drawing.Bitmap bitmap = new Bitmap(width, height);
+            using (System.Drawing.Graphics graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.CopyFromScreen(x, y, 0, 0, new System.Drawing.Size(width, height));
+
+                SaveFileDialog dialog = new SaveFileDialog();
+                dialog.Filter = "Png Files|*.png";
+                if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                {
+                    bitmap.Save(dialog.FileName, ImageFormat.Png);
+                }
+            }
         }
         private void Hook_KeyDown(object sender, KeyEventArgs e)
         {
@@ -61,7 +79,14 @@ namespace CefSharpLiveTV
             {
                 switch (e.KeyCode)
                 {
+                    case Keys.Back:
+                        CaptureScreen(0, 0, this.Width, this.Height);
+                        break;
                     case Keys.Left://chs--
+                        if (backgroundWorker1.IsBusy)
+                        {
+                            break;
+                        }
                         if (liveTVChannel.now > 0)
                         {
                             liveTVChannel.now--;
@@ -73,13 +98,15 @@ namespace CefSharpLiveTV
                         this.Text = (liveTVChannel.now + 1).ToString() + liveTVChannel.name[liveTVChannel.now] + liveTVChannel.url[liveTVChannel.now];
                         label1.Text = this.Text;
                         label1.Visible = true;
-                        timer1.Enabled = true;
                         chromeBrowser.Stop();
-                        myRequestHandler.filter = false;
                         chromeBrowser.Load("about:blank");
                         chromeBrowser.Load(liveTVChannel.url[liveTVChannel.now]);
                         break;
                     case Keys.Right://chs++
+                        if (backgroundWorker1.IsBusy)
+                        {
+                            break;
+                        }
                         if (liveTVChannel.now < (byte)(liveTVChannel.size - 1))
                         {
                             liveTVChannel.now++;
@@ -91,9 +118,7 @@ namespace CefSharpLiveTV
                         this.Text = (liveTVChannel.now + 1).ToString() + liveTVChannel.name[liveTVChannel.now] + liveTVChannel.url[liveTVChannel.now];
                         label1.Text = this.Text;
                         label1.Visible = true;
-                        timer1.Enabled = true;
                         chromeBrowser.Stop();
-                        myRequestHandler.filter = false;
                         chromeBrowser.Load("about:blank");
                         chromeBrowser.Load(liveTVChannel.url[liveTVChannel.now]);
                         break;
@@ -123,60 +148,76 @@ namespace CefSharpLiveTV
                 }
             }
         }
+
         private void ChromeBrowser_FrameLoadEnd(object sender, FrameLoadEndEventArgs e)
         {
-            string script = @"
-            (function() {
-                document.body.style.backgroundColor='#000000';
-                if (typeof(wsplayer)=='undefined')
-                {
-                    return;
-                }
-                for (j = 0; j < 8; j++)
-                {
-                    var div = document.getElementsByTagName('div');
-                    for(i = 0; i < div.length; i++)
+            this.BeginInvoke(new EventHandler(delegate
+            {
+                string script = @"
+                (function() {
+                    var flag = 0;
+                    document.body.style.overflow = 'hidden';
+                    document.body.style.backgroundColor='#000000';
+                    if (typeof(wsplayer)=='undefined')
                     {
-                        if(div[i].innerHTML.indexOf('WsPlayer.swf') == -1)
+                        return 0;
+                    }
+                    do
+                    {
+                        flag = 0;
+                        var div = document.getElementsByTagName('div');
+                        for(i = 0; i < div.length; i++)
                         {
-                            div[i].remove();
+                            if(div[i].innerHTML.indexOf('WsPlayer.swf') == -1)
+                            {
+                                div[i].remove();
+                                flag = 1;
+                            }
+                        }
+                    } while (flag == 1);
+                    do
+                    {
+                        flag = 0;
+                        var link = document.getElementsByTagName('link');
+                        for(i = 0; i < link.length; i++)
+                        {
+                            link[i].remove();
+                            flag = 1;
+                        }
+                    } while (flag == 1);
+                    wsplayer.style.marginTop = '0px';
+                    wsplayer.style.marginLeft = '0px';
+                    wsplayer.style.width = '" + (this.ClientSize.Width - 20).ToString() + @"px';
+                    wsplayer.style.height = '" + (this.ClientSize.Height - 20).ToString() + @"px';
+                    return 1;
+                })();";
+                Task<CefSharp.JavascriptResponse> task = chromeBrowser.EvaluateScriptAsync(script);
+                task.ContinueWith(t =>
+                {
+                    if (!t.IsFaulted)
+                    {
+                        var response = t.Result;
+                        if (response.Success == true)
+                        {
+                            int result = 0;
+                            int.TryParse(response.Result.ToString(), out result);
+                            if (result == 1)
+                            {
+                                timer1.Stop();
+                                timer1.Start();
+                            }
                         }
                     }
-                }
-                for (j = 0; j < 8; j++)
-                {
-                    var link = document.getElementsByTagName('link');
-                    for(i = 0; i < link.length; i++)
-                    {
-                        link[i].remove();
-                    }
-                }
-                wsplayer.style.marginTop = '0px';
-                wsplayer.style.marginLeft = '0px';
-                wsplayer.style.width = '" + (this.ClientSize.Width - 20).ToString() + @"px';
-                wsplayer.style.height = '" + (this.ClientSize.Height - 20).ToString() + @"px';
-            })();";
-            chromeBrowser.ExecuteScriptAsync(script);
+                }, TaskScheduler.FromCurrentSynchronizationContext());
+            }));
         }
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            label1.Text = "频道信息加载中……";
-            liveTVChannel = new LiveTVChannel();
-            if (!liveTVChannel.GetChannel())
-            {
-                this.Close();
-                return;
-            }
-            label1.Text = "频道信息加载完成";
-            chromeBrowser.Load(liveTVChannel.url[liveTVChannel.now]);
-            this.Text = (liveTVChannel.now + 1).ToString() + liveTVChannel.name[liveTVChannel.now] + liveTVChannel.url[liveTVChannel.now];
+            this.Text = "频道信息加载中……";
             label1.Text = this.Text;
-            ShowWindow(FindWindow("Shell_TrayWnd", null), SW_HIDE);
-            ShowWindow(FindWindow("Button", null), SW_HIDE);
-            this.WindowState = FormWindowState.Normal;
-            this.FormBorderStyle = FormBorderStyle.None;
-            this.WindowState = FormWindowState.Maximized;
+            liveTVChannel = new LiveTVChannel();
+            backgroundWorker1.RunWorkerAsync();
             _interceptor.StartCapturing();
         }
 
@@ -189,85 +230,142 @@ namespace CefSharpLiveTV
             this.WindowState = FormWindowState.Normal;
             this.FormBorderStyle = FormBorderStyle.Sizable;
             this.WindowState = FormWindowState.Maximized;
+            if (backgroundWorker1.IsBusy)
+            {
+                backgroundWorker1.CancelAsync();
+            }
+        }
+        [System.Runtime.InteropServices.DllImport("user32")]
+        private static extern int mouse_event(int dwFlags, int dx, int dy, int cButtons, int dwExtraInfo);
+        //移动鼠标 
+        const int MOUSEEVENTF_MOVE = 0x0001;
+        //模拟鼠标左键按下 
+        const int MOUSEEVENTF_LEFTDOWN = 0x0002;
+        //模拟鼠标左键抬起 
+        const int MOUSEEVENTF_LEFTUP = 0x0004;
+        //模拟鼠标右键按下 
+        const int MOUSEEVENTF_RIGHTDOWN = 0x0008;
+        //模拟鼠标右键抬起 
+        const int MOUSEEVENTF_RIGHTUP = 0x0010;
+        //模拟鼠标中键按下 
+        const int MOUSEEVENTF_MIDDLEDOWN = 0x0020;
+        //模拟鼠标中键抬起 
+        const int MOUSEEVENTF_MIDDLEUP = 0x0040;
+        //标示是否采用绝对坐标 
+        const int MOUSEEVENTF_ABSOLUTE = 0x8000;
+        [DllImport("user32.dll")]
+        private static extern int SetCursorPos(int x, int y);
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT
+        {
+            public int X;
+            public int Y;
+
+            public POINT(int x, int y)
+            {
+                this.X = x;
+                this.Y = y;
+            }
+
+            public override string ToString()
+            {
+                return ("X:" + X + ", Y:" + Y);
+            }
         }
 
-        private void timer1_Tick(object sender, EventArgs e)
-        {
-            string script = @"
-            (function() {
-                if (typeof(wsplayer)=='undefined')
-                {
-                    return 0;
-                }
-                var result = 1;
-                var div = document.getElementsByTagName('div');
-                for(i = 0; i < div.length; i++)
-                {
-                    if(div[i].innerHTML.indexOf('WsPlayer.swf') == -1)
-                    {
-                        div[i].remove();
-                        result = 0;
-                    }
-                }
-                return result;
-            })();";
-            Task<CefSharp.JavascriptResponse> task = chromeBrowser.EvaluateScriptAsync(script);
-            task.ContinueWith(t =>
-            {
-                if (!t.IsFaulted)
-                {
-                    var response = t.Result;
-                    if (response.Success == true)
-                    {
-                        int result = 0;
-                        int.TryParse(response.Result.ToString(), out result);
-                        if (result == 1)
-                        {
-                            label1.Visible = false;
-                            timer1.Enabled = false;
-                        }
-                    }
-                }
-            }, TaskScheduler.FromCurrentSynchronizationContext());
-        }
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        public static extern bool GetCursorPos(out POINT pt);
 
         private void Form1_SizeChanged(object sender, EventArgs e)
         {
             if (chromeBrowser.Created)
-            { 
-            string script = @"
-            (function() {
-                document.body.style.backgroundColor='#000000';
-                if (typeof(wsplayer)=='undefined')
-                {
-                    return;
-                }
-                for (j = 0; j < 8; j++)
-                {
-                    var div = document.getElementsByTagName('div');
-                    for(i = 0; i < div.length; i++)
+            {
+                string script = @"
+                (function() {
+                    if (typeof(wsplayer)=='undefined')
                     {
-                        if(div[i].innerHTML.indexOf('WsPlayer.swf') == -1)
-                        {
-                            div[i].remove();
-                        }
+                        return;
                     }
-                }
-                for (j = 0; j < 8; j++)
-                {
-                    var link = document.getElementsByTagName('link');
-                    for(i = 0; i < link.length; i++)
-                    {
-                        link[i].remove();
-                    }
-                }
-                wsplayer.style.marginTop = '0px';
-                wsplayer.style.marginLeft = '0px';
-                wsplayer.style.width = '" + (this.ClientSize.Width - 20).ToString() + @"px';
-                wsplayer.style.height = '" + (this.ClientSize.Height - 20).ToString() + @"px';
-            })();";
-            chromeBrowser.ExecuteScriptAsync(script);
+                    wsplayer.style.marginTop = '0px';
+                    wsplayer.style.marginLeft = '0px';
+                    wsplayer.style.width = '" + (this.ClientSize.Width - 20).ToString() + @"px';
+                    wsplayer.style.height = '" + (this.ClientSize.Height - 20).ToString() + @"px';
+                })();";
+                chromeBrowser.ExecuteScriptAsync(script);
             }
+            label2.Left = this.ClientSize.Width / 2 - 70;
+            label2.Top = this.ClientSize.Height / 2 - 120;
+            label2.Visible = false;
+        }
+
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+            timer1.Stop();
+            label1.Visible = false;
+            if (this.FormBorderStyle == FormBorderStyle.None)
+            {
+                POINT pt = new POINT();
+                GetCursorPos(out pt);
+                Point ps = new Point();
+                Point pc = new Point();
+                //设置
+                pc.X = this.ClientSize.Width - 82;
+                pc.Y = this.ClientSize.Height - 32;
+                ps = this.PointToScreen(pc);
+                SetCursorPos(ps.X, ps.Y);
+                mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+                //比例
+                pc.X = this.ClientSize.Width / 2 - 70;
+                pc.Y = this.ClientSize.Height / 2 - 120;
+                ps = this.PointToScreen(pc);
+                SetCursorPos(ps.X, ps.Y);
+                mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+                //铺满
+                pc.X = this.ClientSize.Width / 2 + 125;
+                pc.Y = this.ClientSize.Height / 2 - 32;
+                ps = this.PointToScreen(pc);
+                SetCursorPos(ps.X, ps.Y);
+                mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+                //确定
+                pc.X = this.ClientSize.Width / 2 - 5;
+                pc.Y = this.ClientSize.Height / 2 + 68;
+                ps = this.PointToScreen(pc);
+                SetCursorPos(ps.X, ps.Y);
+                mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+                SetCursorPos(pt.X, pt.Y);
+            }
+        }
+
+        private void backgroundWorker1_DoWork(object sender, DoWorkEventArgs e)
+        {
+            e.Result = liveTVChannel.GetChannel();
+        }
+
+        private void backgroundWorker1_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+            if ((bool)e.Result)
+            {
+                label1.Text = "频道信息加载完成";
+                chromeBrowser.Load(liveTVChannel.url[liveTVChannel.now]);
+                this.Text = (liveTVChannel.now + 1).ToString() + liveTVChannel.name[liveTVChannel.now] + liveTVChannel.url[liveTVChannel.now];
+                label1.Text = this.Text;
+                ShowWindow(FindWindow("Shell_TrayWnd", null), SW_HIDE);
+                ShowWindow(FindWindow("Button", null), SW_HIDE);
+                this.WindowState = FormWindowState.Normal;
+                this.FormBorderStyle = FormBorderStyle.None;
+                this.WindowState = FormWindowState.Maximized;
+            }
+            else
+            {
+                this.Text = "频道信息加载失败";
+                label1.Text = this.Text;
+            }
+        }
+
+        private void timer2_Tick(object sender, EventArgs e)
+        {
+            //退出flash全屏
+            SendKeys.Send("{ESC}");
         }
     }
 }

@@ -18,9 +18,18 @@ namespace CefSharpLiveTV
         {
             now = 0;
             size = 0;
-            WebClient webClient = new WebClient();
-            Byte[] dat = webClient.DownloadData("https://live.wasu.cn/");
-            webClient.Dispose();
+            Byte[] dat;
+            WebClientEx webClient = new WebClientEx();
+            try
+            {
+                webClient.Timeout = 20000;
+                dat = webClient.DownloadData("https://live.wasu.cn/");
+            }
+            catch
+            {
+                webClient.Dispose();
+                return false;
+            }
             string src = Encoding.GetEncoding("utf-8").GetString(dat).Replace("\n", "").Replace("\r", "");
             src = src.Substring(src.IndexOf("<div class=\"tvrow\">"));
             src = src.Substring(0, src.IndexOf("</div>"));
@@ -29,8 +38,16 @@ namespace CefSharpLiveTV
             Match chs = Regex.Match(src, pattern);
             if (chs.Success)
             {
-                WebClient webClient2 = new WebClient();
-                dat = webClient2.DownloadData("https://" + chs.Groups["url"].Value);
+                try
+                {
+                    webClient.Timeout = 20000;
+                    dat = webClient.DownloadData("https://" + chs.Groups["url"].Value);
+                }
+                catch
+                {
+                    webClient.Dispose();
+                    return false;
+                }
                 src = Encoding.GetEncoding("utf-8").GetString(dat).Replace("\n", "").Replace("\r", "");
                 //<div class="change_item block">
                 src = src.Substring(src.IndexOf("<div class=\"change_item block\">"));
